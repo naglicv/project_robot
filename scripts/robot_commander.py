@@ -35,6 +35,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 
+import math
+
 
 class TaskResult(Enum):
     UNKNOWN = 0
@@ -314,22 +316,25 @@ def main(args=None):
         rc.undock()
     
     # Finally send it a goal to reach
-    goal_pose = PoseStamped()
-    goal_pose.header.frame_id = 'map'
-    goal_pose.header.stamp = rc.get_clock().now().to_msg()
+    points = [[-1.16,-0.4,0.49],[-1.76,1.51,0.597],[-1.58,4.32,-0.584],[-1.32,3.44,-0.165],[0.25,3.32,-0.568],[1.9,3.04,0.57],[2.22,1.87,-0.989],[0.39,1.87,-0.207],[0.63,-0.76,0.458],[1.5,-0.4,-0.069],[3.27,-1.4,0.961],[2.23,-1.78,-1],[1.14,-1.8,-1],[-0.16,-1.33,0.832]]
 
-    goal_pose.pose.position.x = 2.6
-    goal_pose.pose.position.y = -1.3
-    goal_pose.pose.orientation = rc.YawToQuaternion(0.57)
+    for point in points:
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = 'map'
+        goal_pose.header.stamp = rc.get_clock().now().to_msg()
 
-    rc.goToPose(goal_pose)
+        goal_pose.pose.position.x = point[0]
+        goal_pose.pose.position.y = point[1]
+        goal_pose.pose.orientation = rc.YawToQuaternion(point[2])
 
-    while not rc.isTaskComplete():
-        rc.info("Waiting for the task to complete...")
-        time.sleep(1)
+        rc.goToPose(goal_pose)
 
-    rc.spin(-0.57)
+        while not rc.isTaskComplete():
+            rc.info("Waiting for the task to complete...")
+            time.sleep(1)
 
+        #rc.spin(2*math.pi)
+        time.sleep(2)
     rc.destroyNode()
 
     # And a simple example
