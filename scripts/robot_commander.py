@@ -23,6 +23,7 @@ from geometry_msgs.msg import Quaternion, PoseStamped, PoseWithCovarianceStamped
 from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import Spin, NavigateToPose
 from turtle_tf2_py.turtle_tf2_broadcaster import quaternion_from_euler
+from visualization_msgs.msg import Marker
 
 from irobot_create_msgs.action import Dock, Undock
 from irobot_create_msgs.msg import DockStatus
@@ -76,6 +77,11 @@ class RobotCommander(Node):
                                                               self._amclPoseCallback,
                                                               amcl_pose_qos)
         
+        self.people_marker_sub = self.create_subscription(Marker,
+                                                          'people_marker',
+                                                          self._peopleMarkerCallback,
+                                                          QoSReliabilityPolicy.BEST_EFFORT)
+        
         # ROS2 publishers
         self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped,
                                                       'initialpose',
@@ -87,7 +93,17 @@ class RobotCommander(Node):
         self.undock_action_client = ActionClient(self, Undock, 'undock')
         self.dock_action_client = ActionClient(self, Dock, 'dock')
 
+        self.latest_people_marker_pose = None
+        self.current_pose = None
+
         self.get_logger().info(f"Robot commander has been initialized!")
+
+    def _peopleMarkerCallback(self, msg):
+        """Handle new messages from 'people_marker'."""
+        self.debug('Received people marker pose')
+        # Store the latest pose for use in the movement loop
+        self.latest_people_marker_pose = msg.pose.position
+        ...
         
     def destroyNode(self):
         self.nav_to_pose_client.destroy()
@@ -117,8 +133,8 @@ class RobotCommander(Node):
 
         self.result_future = self.goal_handle.get_result_async()
         return True
-
-    def spin(self, spin_dist=1.57, time_allowance=10):
+    
+    def spin(self, spin_dist, time_allowance=10):
         self.debug("Waiting for 'Spin' action server")
         while not self.spin_client.wait_for_server(timeout_sec=1.0):
             self.info("'Spin' action server not available, waiting...")
@@ -316,7 +332,7 @@ def main(args=None):
         rc.undock()
     
     # Finally send it a goal to reach
-    points = [[-1.16,-0.4,0.49],[-1.76,1.51,0.597],[-1.58,4.32,-0.584],[-1.32,3.44,-0.165],[0.25,3.32,-0.568],[1.9,3.04,0.57],[2.22,1.87,-0.989],[0.39,1.87,-0.207],[0.63,-0.76,0.458],[1.5,-0.4,-0.069],[3.27,-1.4,0.961],[2.23,-1.78,-1],[1.14,-1.8,-1],[-0.16,-1.33,0.832]]
+    points = [[-1.16,-0.4,0.0],[-1.76,1.51,0.0],[-1.58,4.32,-0.584],[-1.32,3.44,-0.165],[0.25,3.32,-0.568],[1.9,3.04,0.57],[2.22,1.87,-0.989],[0.39,1.87,-0.207],[0.63,-0.76,0.458],[1.5,-0.4,-0.069],[3.27,-1.4,0.961],[2.23,-1.78,-1],[1.14,-1.8,-1],[-0.16,-1.33,0.832]]
 
     for point in points:
         goal_pose = PoseStamped()
@@ -333,10 +349,73 @@ def main(args=None):
             rc.info("Waiting for the task to complete...")
             time.sleep(1)
 
-        #rc.spin(2*math.pi)
+        #goal_pose.pose.orientation = rc.YawToQuaternion(point[2]+3)
+        #rc.goToPose(goal_pose)
+
+        #while not rc.isTaskComplete():
+        #    rc.info("Waiting for the task to complete...")
+        #    time.sleep(1)
+
+        #goal_pose.pose.orientation = rc.YawToQuaternion(point[2]+5.9)
+        #rc.goToPose(goal_pose)
+
+        #while not rc.isTaskComplete():
+        #    rc.info("Waiting for the task to complete...")
+        #    time.sleep(1)
+
+        # Calculate the spin distance
+        spin_dist = 2.0 * math.pi + point[2]
+
+        # Call the spin method
+        rc.spin(spin_dist)
         time.sleep(2)
     rc.destroyNode()
+    
+    # marked_poses = []
+    # i = 0
+    # while len(points) > i:
+    #     # Check if there is a new 'people_marker' pose to go to first
+    #     # if rc.latest_people_marker_pose and rc.latest_people_marker_pose not in marked_poses:
+    #     #     rc.get_logger().info(f"I got coordinates for the face!")
+    #     #     goal_pose = PoseStamped()
+    #     #     goal_pose.header.frame_id = 'map'
+    #     #     goal_pose.header.stamp = rc.get_clock().now().to_msg()
+    #     #     marked_poses.append(rc.latest_people_marker_pose)
 
+
+    #     #     #rc.get_logger().info(f"current pose: x={rc.current_pose} Possition of face: {rc.latest_people_marker_pose.x} {rc.latest_people_marker_pose.y} {rc.latest_people_marker_pose.z}")
+    #     #     # goal_pose.pose.position.x = 0.0
+    #     #     # goal_pose.pose.position.y = 0.0
+    #     #     goal_pose.pose.orientation = rc.YawToQuaternion(-rc.latest_people_marker_pose.z)
+
+    #     #     goal_pose.pose.position.x = rc.current_pose.pose.position.x + rc.latest_people_marker_pose.x/2
+    #     #     goal_pose.pose.position.y = rc.current_pose.pose.position.y + rc.latest_people_marker_pose.y/2
+    #     #     #goal_pose.pose.orientation = rc.YawToQuaternion(0.5)         
+    #     #     # Reset the latest people marker pose to ensure it's only used once
+    #     #     rc.latest_people_marker_pose = None
+    #     # else:
+    #     point = points[i]
+    #     # If no new 'people_marker' pose, proceed with the next point in the list
+    #     goal_pose = PoseStamped()
+    #     goal_pose.header.frame_id = 'map'
+    #     goal_pose.header.stamp = rc.get_clock().now().to_msg()
+    #     goal_pose.pose.position.x = point[0]
+    #     goal_pose.pose.position.y = point[1]
+    #     goal_pose.pose.orientation = rc.YawToQuaternion(point[2])
+
+    #     rc.goToPose(goal_pose)
+
+    #     while not rc.isTaskComplete():
+    #         rc.info("Waiting for the task to complete...")
+    #         time.sleep(1)
+
+    #     # Optional: add a pause or spin here if desired
+    #     rc.spin(2)
+    #     time.sleep(2)
+    #     i+=1
+
+    
+    # rc.destroyNode()
     # And a simple example
 if __name__=="__main__":
     main()
