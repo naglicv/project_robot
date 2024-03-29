@@ -339,7 +339,7 @@ class RobotCommander(Node):
             coord_face.pose.orientation = self.YawToQuaternion(z)
             #coord_face = self.current_pose + self.latest_people_marker_pose
             for face in marked_poses:
-                if abs(x - face.pose.position.x) < 1.0 and abs(y - face.pose.position.y) < 2.2:
+                if abs(x - face.pose.position.x) < 1.0 and abs(y - face.pose.position.y) < 2.5:
                     self.get_logger().info(f"Face already marked")
                     #new = False
                     return False, marked_poses
@@ -355,7 +355,7 @@ class RobotCommander(Node):
             goal_pose.header.stamp = self.get_clock().now().to_msg()
 
             #make it better maybe
-            goal_pose.pose.orientation = self.YawToQuaternion(1.0)
+            goal_pose.pose.orientation = self.YawToQuaternion(z1)
 
             goal_pose.pose.position.x = curr_pose[0] + x1/2
             goal_pose.pose.position.y = curr_pose[1] + y1/2
@@ -537,20 +537,16 @@ def main(args=None):
 
         rc.latest_people_marker_pose = None
         spin_dist = 0.5 * math.pi
-        n = 0
-        while n < 4:
+        for n in range(4):
             rc.spin(spin_dist)
             while not rc.isTaskComplete():
                 rc.info("Waiting for the task to complete...")
                 rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
                 approached_face, marked_poses = rc.check_approach(marked_poses, point)
                 if approached_face: 
-                    n = -1
-                else:
-                    rc.latest_people_marker_pose = None
+                    n = 0
                 # rc.check_approach(marked_poses, rc.current_pose)
                 time.sleep(1)
-            n += 1
             #rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
             #if rc.check_approach(marked_poses, point): 
             #    n = 0
