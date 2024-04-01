@@ -17,6 +17,10 @@ find_package(rclpy REQUIRED)
 
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(action_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 install(DIRECTORY
   launch
@@ -27,6 +31,8 @@ install(DIRECTORY
 )
 
 install(PROGRAMS
+  scripts/map_goals.py
+  scripts/transform_point.py
   scripts/detect_people.py
   scripts/robot_commander.py
   DESTINATION lib/${PROJECT_NAME})
