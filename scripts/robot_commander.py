@@ -94,6 +94,11 @@ class RobotCommander(Node):
                                                           self._peopleMarkerCallback,
                                                           QoSReliabilityPolicy.BEST_EFFORT)
         
+        self.people_marker_sub = self.create_subscription(Marker,
+                                                          'breadcrumbs',
+                                                          self.breadcrumbs_callback,
+                                                          QoSReliabilityPolicy.BEST_EFFORT)
+        
         # ROS2 publishers
         self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped,
                                                       'initialpose',
@@ -117,7 +122,9 @@ class RobotCommander(Node):
         self.latest_people_marker_robot_pose = None
         self.current_pose = None
         self.detected_faces = []
+        self.approached_faces_num = 0
         self.new_face_detected = False
+        self.start_detecting = False
 
         self.get_logger().info(f"Robot commander has been initialized!")
 
@@ -135,28 +142,71 @@ class RobotCommander(Node):
     #     if new:
     #         self.detected_faces.append(detected_face)
 
+    def breadcrumbs_callback(self, msg):
+        #self.latest_people_marker_pose = msg.pose.position
+        #self.latest_people_marker_robot_pose = self.current_pose
+        #self.new_face_detected = True
+        #self.detected_faces.append(msg.pose.position)
+        self.info("~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        #self.approached_faces_num = 0
+        #self.start_detecting = True
+
     def _peopleMarkerCallback(self, msg):
         """Handle new messages from 'people_marker'."""
-        self.latest_people_marker_robot_pose = self.current_pose
-        self.info('Received people marker pose')
-        # Store the latest pose for use in the movement loop
-        #self.latest_people_marker_pose = msg.pose.position
-        detected_face = msg.pose.position
-        #self.new_face_detected = True
-        #self.detected_faces.append(detected_face)
-        new = True
-        # for face in self.detected_faces:
-        #     if abs(detected_face.x - face.x) < 1.0 and abs(detected_face.y - face.y) < 2.5:
-        #         self.get_logger().info(f"Face already marked")
-        #         new = False
-        #         break
-        # self.info(f"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< New face detected")
-        self.new_face_detected = new
-        if new:
-            self.detected_faces.append(detected_face)
-            self.latest_people_marker_pose = detected_face
-            #self.latest_people_marker_robot_pose = self.current_pose
-        
+        if self.start_detecting:
+            curr_pose = self.current_pose
+            self.info('Received people marker pose')
+            # Store the latest pose for use in the movement loop
+            #self.latest_people_marker_pose = msg.pose.position
+            detected_face = msg
+            detected_face_world = detected_face
+            x = detected_face_world.pose.position.x + curr_pose.pose.position.x
+            y = detected_face_world.pose.position.y + curr_pose.pose.position.y
+            
+            #self.new_face_detected = True
+            #self.detected_faces.append(detected_face)
+            new = True
+            for face in self.detected_faces:
+                if abs(x - face.pose.position.x) < 1.0 and abs(y - face.pose.position.y) < 1.0:
+                    self.get_logger().info(f"Face already marked")
+                    self.info(f"Face coordinates: {detected_face.pose.position.x}, {detected_face.pose.position.y}")
+                    self.info(f"Robot coordinates: {curr_pose.pose.position.x}, {curr_pose.pose.position.y}")
+                    self.info(f"--> sum coordinates: {x}, {y}")
+
+                    new = False
+                    break
+            if new:
+                self.start_detecting = False
+                self.latest_people_marker_robot_pose = curr_pose
+                self.info(f"<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< New face detected")
+                self.info(f"Face coordinates: {detected_face.pose.position.x}, {detected_face.pose.position.y}")
+                self.info(f"Robot coordinates: {curr_pose.pose.position.x}, {curr_pose.pose.position.y}")
+                self.info(f"--> sum coordinates: {x}, {y}")
+                self.new_face_detected = True
+                point_msg = PointStamped()
+                point_msg.header.frame_id = 'base_link'
+                point_msg.header.stamp = self.get_clock().now().to_msg()
+                point_msg.point = detected_face.pose.position # Extract the position from the PoseStamped message
+
+                # Publish the PointStamped message
+                self.info("")
+                self.info("PPPPPPPPUUUUUUUUUUUUUUUUUUUUUBBBBBBBBBBBBBBBBBBBLLLLLLLLLLLLLLLLLLLLLLIIIIIIIIIIIIIIIIIIIISSSSSSSSSSSSSSHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH")
+                self.info("")
+
+                self.face_pub.publish(point_msg)
+                detected_face_world.pose.position.x = x
+                detected_face_world.pose.position.y = y
+                self.detected_faces.append(detected_face_world)
+                #self.info(f"Face coordinates: {detected_face.x}, {detected_face.y}")
+                
+                
+                #self.new_face_detected = True
+                #self.detected_faces.append(detected_face)
+                #self.latest_people_marker_pose = detected_face
+                #self.latest_people_marker_robot_pose = self.current_pose
+            
+            self.latest_people_marker_pose = None
+
         
     def destroyNode(self):
         self.nav_to_pose_client.destroy()
@@ -371,31 +421,26 @@ class RobotCommander(Node):
     def check_approach(self, point):
         self.get_logger().info(f"IM LOOKING FOR FACES")
         #Check if there is a new 'people_marker' pose to go to first
-        coord_face_relative_to_r = self.latest_people_marker_pose
-        curr_pose = self.latest_people_marker_robot_pose
-        if coord_face_relative_to_r is not None:
+        self.start_detecting = False
+        if self.new_face_detected:
+            
+            curr_pose = self.latest_people_marker_robot_pose
+        
             coord_face = PoseStamped()
             coord_face.header.frame_id = 'base_link'
             coord_face.header.stamp = self.get_clock().now().to_msg()
+            coord_face = self.detected_faces[self.approached_faces_num]
 
             # x = curr_pose.pose.position.x + coord_face_relative_to_r.x
             # y = curr_pose.pose.position.y + coord_face_relative_to_r.y
             # z = coord_face_relative_to_r.z + curr_pose.pose.orientation.z
-            x = curr_pose.pose.position.x + coord_face_relative_to_r.x
-            y = curr_pose.pose.position.y + coord_face_relative_to_r.y
+            x = coord_face.pose.position.x
+            y = coord_face.pose.position.y
             z = math.atan2(y, x)
             self.get_logger().info(f"----------------------------> {z}")
 
-            x1 = coord_face_relative_to_r.x
-            y1 = coord_face_relative_to_r.y
-            z1 = coord_face_relative_to_r.z
-            coord_face.pose.position.x = x1
-            coord_face.pose.position.y = y1
 
-            # Calculate the yaw angle to face the detected face              ****
-            # **Change 1: Calculate yaw angle**
-            yaw_angle = math.atan2(y1, x1)
-            coord_face.pose.orientation = self.YawToQuaternion(0.)  # ****
+            coord_face.pose.orientation = self.YawToQuaternion(z)  # ****
             
             
             #coord_face = self.current_pose + self.latest_people_marker_pose
@@ -408,48 +453,49 @@ class RobotCommander(Node):
 
             # Assuming 'coord_face' is a PoseStamped message
             # Create a PointStamped message
-            point_msg = PointStamped()
-            point_msg.header = coord_face.header # Copy the header from the PoseStamped message
-            point_msg.point = coord_face.pose.position # Extract the position from the PoseStamped message
+            # point_msg = PointStamped()
+            # point_msg.header = coord_face.header # Copy the header from the PoseStamped message
+            # point_msg.point = coord_face.pose.position # Extract the position from the PoseStamped message
 
-            # Publish the PointStamped message
-            self.info("")
-            self.info("PPPPPPPPUUUUUUUUUUUUUUUUUUUUUBBBBBBBBBBBBBBBBBBBLLLLLLLLLLLLLLLLLLLLLLIIIIIIIIIIIIIIIIIIIISSSSSSSSSSSSSSHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH")
-            self.info("")
+            # # Publish the PointStamped message
+            # self.info("")
+            # self.info("PPPPPPPPUUUUUUUUUUUUUUUUUUUUUBBBBBBBBBBBBBBBBBBBLLLLLLLLLLLLLLLLLLLLLLIIIIIIIIIIIIIIIIIIIISSSSSSSSSSSSSSHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH")
+            # self.info("")
 
-            self.face_pub.publish(point_msg)
-            time.sleep(2)
-            if not self.new_face_detected:
-                return False
+            # self.face_pub.publish(point_msg)
+            # time.sleep(2)
+            # if not self.new_face_detected:
+            #     self.start_detecting = True
+            #     return False
 
             #if new:
             # marked_poses.append(coord_face)
             self.get_logger().info(f"Number of detected faces so far: {len(self.detected_faces)}")
             for l in range(len(self.detected_faces)):
-                self.get_logger().info(f"face {l}: x: {self.detected_faces[l].x}, y: {self.detected_faces[l].y}, z: {self.detected_faces[l].z}")
+                self.get_logger().info(f"face {l}: x: {self.detected_faces[l].pose.position.x}, y: {self.detected_faces[l].pose.position.y}, z: {self.detected_faces[l].pose.orientation.z}")
 
             # MOVE TOWARDS THE FACE
             goal_pose = PoseStamped()
             goal_pose.header.frame_id = 'map'
             goal_pose.header.stamp = self.get_clock().now().to_msg()
 
-            goal_pose.pose.position.x = curr_pose.pose.position.x + x1/2
-            goal_pose.pose.position.y = curr_pose.pose.position.y + y1/2
+            goal_pose.pose.position.x = (curr_pose.pose.position.x - x)/2
+            goal_pose.pose.position.y = (curr_pose.pose.position.y - y)/2
 
             # **Change 2: Set goal_pose orientation using yaw_angle**
-            yaw_angle = math.atan2(y1, x1)
-            goal_pose.pose.orientation = self.YawToQuaternion(yaw_angle)
+            #yaw_angle = math.atan2(y1, x1)
+            goal_pose.pose.orientation = self.YawToQuaternion(z)
 
             self.goToPose(goal_pose)
             while not self.isTaskComplete():
-                self.info("Rotating towards the face...")
+                self.info("Moving towards the face...")
                 time.sleep(1)
 
             # ROTATE TO FACE THE FACE
             # Calculate the yaw angle to face the detected face
-            yaw_angle = math.atan2(y1, x1)
+            #yaw_angle = math.atan2(y, x)
             # Use the spin function to rotate the robot to face the detected face
-            self.spin(yaw_angle)
+            self.spin(-z)
             while not self.isTaskComplete():
                 self.info("Rotating towards the face...")
                 time.sleep(1)
@@ -477,6 +523,7 @@ class RobotCommander(Node):
             # Reset the latest people marker pose to ensure it's only used once
             self.latest_people_marker_pose = None
             self.new_face_detected = False
+            self.approached_faces_num += 1
             return True
         else:
             return False
@@ -497,8 +544,9 @@ def main(args=None):
     if rc.is_docked:
         rc.undock()
     
+    
     # Finally send it a goal to reach
-    points = [[-1.16,-0.4,0.0],[-1.76,1.51,0.0],[-1.58,4.32,-0.584],[-1.32,3.44,-0.165],[0.25,3.32,-0.568],[1.9,3.04,0.57],[2.22,1.87,-0.989],[0.39,1.87,-0.207],[0.63,-0.76,0.458],[1.5,-0.4,-0.069],[3.27,-1.4,0.961],[2.23,-1.78,-1],[1.14,-1.8,-1.0],[-0.16,-1.33,0.832]]
+    points = [[-1.16,-0.4,0.0],[-1.76,1.51,0.0],[-1.58,4.32,-0.584],[-1.58,3.44,-0.165],[0.25,3.32,-0.568],[1.9,3.04,0.57],[2.22,1.87,-0.989],[0.39,1.87,-0.207],[0.63,-0.76,0.458],[1.5,-0.4,-0.069],[3.27,-1.4,0.961],[2.23,-1.78,-1],[1.14,-1.8,-1.0],[-0.16,-1.33,0.832]]
 
     # for point in points:
     #     goal_pose = PoseStamped()
@@ -626,19 +674,28 @@ def main(args=None):
             time.sleep(1)
 
         rc.latest_people_marker_pose = None
-        spin_dist = 0.1 * math.pi
+        spin_dist = 0.05 * math.pi
         n = 0
-        while n < 20:
+        while n < 40:
             rc.spin(spin_dist)
+            #rc.start_detecting = False
+            rc.start_detecting = True
             while not rc.isTaskComplete():
+                
                 rc.info("Spinning in circle...")
                 #rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
-                approached_face = rc.check_approach(point)
-                if approached_face: 
-                    n = -1
-                    break
+                
                 # rc.check_approach(marked_poses, rc.current_pose)
                 time.sleep(1)
+                
+
+            
+            #time.sleep(3)
+            approached_face = rc.check_approach(point)
+            if approached_face: 
+                #rc.cancelTask()
+                n = -1
+                break
             n += 1
             #rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
             #if rc.check_approach(marked_poses, point): 
