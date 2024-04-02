@@ -419,23 +419,24 @@ class RobotCommander(Node):
         return
     
     def check_approach(self, point):
+        self.get_logger().info(f"I've already approached {self.approached_faces_num} faces")
         self.get_logger().info(f"IM LOOKING FOR FACES")
         #Check if there is a new 'people_marker' pose to go to first
         self.start_detecting = False
         if self.new_face_detected:
-            
-            curr_pose = self.latest_people_marker_robot_pose
+            curr_pose = self.current_pose
         
             coord_face = PoseStamped()
             coord_face.header.frame_id = 'base_link'
             coord_face.header.stamp = self.get_clock().now().to_msg()
-            coord_face = self.detected_faces[self.approached_faces_num]
+            coord_face.pose = self.detected_faces[self.approached_faces_num].pose
 
             # x = curr_pose.pose.position.x + coord_face_relative_to_r.x
             # y = curr_pose.pose.position.y + coord_face_relative_to_r.y
             # z = coord_face_relative_to_r.z + curr_pose.pose.orientation.z
-            x = coord_face.pose.position.x
-            y = coord_face.pose.position.y
+            x = self.detected_faces[self.approached_faces_num].pose.position.x
+            y = self.detected_faces[self.approached_faces_num].pose.position.y
+            #y = coord_face.pose.position.y
             z = math.atan2(y, x)
             self.get_logger().info(f"----------------------------> {z}")
 
@@ -479,12 +480,15 @@ class RobotCommander(Node):
             goal_pose.header.frame_id = 'map'
             goal_pose.header.stamp = self.get_clock().now().to_msg()
 
-            goal_pose.pose.position.x = (curr_pose.pose.position.x - x)/2
-            goal_pose.pose.position.y = (curr_pose.pose.position.y - y)/2
+            goal_pose.pose.position.x = (point[0] - x)/2
+            goal_pose.pose.position.y = (point[1] - y)/2
 
             # **Change 2: Set goal_pose orientation using yaw_angle**
             #yaw_angle = math.atan2(y1, x1)
-            goal_pose.pose.orientation = self.YawToQuaternion(z)
+            goal_pose.pose.orientation = self.YawToQuaternion(point[2])
+            self.info(f"I am located at point {point[0]}, {point[1]}...")
+            self.info(f"")
+            self.info(f"Moving towards the face at {goal_pose.pose.position.x}, {goal_pose.pose.position.y}...")
 
             self.goToPose(goal_pose)
             while not self.isTaskComplete():
@@ -523,7 +527,7 @@ class RobotCommander(Node):
             # Reset the latest people marker pose to ensure it's only used once
             self.latest_people_marker_pose = None
             self.new_face_detected = False
-            self.approached_faces_num += 1
+            self.approached_faces_num = self.approached_faces_num + 1
             return True
         else:
             return False
@@ -691,11 +695,11 @@ def main(args=None):
 
             
             #time.sleep(3)
+            rc.start_detecting = False
             approached_face = rc.check_approach(point)
             if approached_face: 
                 #rc.cancelTask()
                 n = -1
-                break
             n += 1
             #rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
             #if rc.check_approach(marked_poses, point): 
