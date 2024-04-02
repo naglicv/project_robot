@@ -137,6 +137,7 @@ class RobotCommander(Node):
 
     def _peopleMarkerCallback(self, msg):
         """Handle new messages from 'people_marker'."""
+        self.latest_people_marker_robot_pose = self.current_pose
         self.info('Received people marker pose')
         # Store the latest pose for use in the movement loop
         #self.latest_people_marker_pose = msg.pose.position
@@ -154,8 +155,8 @@ class RobotCommander(Node):
         if new:
             self.detected_faces.append(detected_face)
             self.latest_people_marker_pose = detected_face
-            self.latest_people_marker_robot_pose = self.current_pose
-        ...
+            #self.latest_people_marker_robot_pose = self.current_pose
+        
         
     def destroyNode(self):
         self.nav_to_pose_client.destroy()
@@ -625,9 +626,9 @@ def main(args=None):
             time.sleep(1)
 
         rc.latest_people_marker_pose = None
-        spin_dist = 0.5 * math.pi
+        spin_dist = 0.1 * math.pi
         n = 0
-        while n < 4:
+        while n < 20:
             rc.spin(spin_dist)
             while not rc.isTaskComplete():
                 rc.info("Spinning in circle...")
