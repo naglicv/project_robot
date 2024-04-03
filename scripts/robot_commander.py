@@ -19,7 +19,7 @@ import time
 
 from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Duration
-from geometry_msgs.msg import Quaternion, PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import Quaternion, PoseStamped, PoseWithCovarianceStamped, PointStamped
 from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import Spin, NavigateToPose
 from turtle_tf2_py.turtle_tf2_broadcaster import quaternion_from_euler
@@ -37,7 +37,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 
 import math
-#import pyttsx3
+import pyttsx3
 
 
 class TaskResult(Enum):
@@ -47,6 +47,12 @@ class TaskResult(Enum):
     FAILED = 3
 
 amcl_pose_qos = QoSProfile(
+          durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+          reliability=QoSReliabilityPolicy.RELIABLE,
+          history=QoSHistoryPolicy.KEEP_LAST,
+          depth=1)
+
+qos_profile = QoSProfile(
           durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
           reliability=QoSReliabilityPolicy.RELIABLE,
           history=QoSHistoryPolicy.KEEP_LAST,
@@ -87,6 +93,9 @@ class RobotCommander(Node):
         self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped,
                                                       'initialpose',
                                                       10)
+        self.face_pub = self.create_publisher(PointStamped,
+                                                      'face',
+                                                      qos_profile)
 
         # ROS2 Action clients
         self.nav_to_pose_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -98,14 +107,14 @@ class RobotCommander(Node):
         self.current_pose = None
         self.hellos_said = 0
 
-        # self.audio_engine = pyttsx3.init() ----------------
+        self.audio_engine = pyttsx3.init()
 
         self.get_logger().info(f"Robot commander has been initialized!")
 
     def greet_face(self, msg):
-        # self.audio_engine.say(msg)
-        # self.audio_engine.runAndWait()
-        self.get_logger().info(msg)
+        self.audio_engine.say(msg)
+        self.audio_engine.runAndWait()
+        # self.get_logger().info(msg)
 
     def _peopleMarkerCallback(self, msg):
         """Handle new messages from 'people_marker'."""
@@ -352,6 +361,13 @@ class RobotCommander(Node):
                     return False, marked_poses
             #if new:
             marked_poses.append(coord_face)
+            point_msg = PointStamped()
+            point_msg.header.frame_id = 'base_link'
+            point_msg.header.stamp = self.get_clock().now().to_msg()
+            point_msg.point = coord_face_relative_to_r
+
+            self.face_pub.publish(point_msg)
+
             self.get_logger().info(f"Number of detected faces so far: {len(marked_poses)}")
             for l in range(len(marked_poses)):
                 self.get_logger().info(f"face {l}: x: {marked_poses[l].pose.position.x}, y: {marked_poses[l].pose.position.y}, z: {marked_poses[l].pose.orientation.z}")
@@ -466,6 +482,8 @@ def main(args=None):
                 rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
                 approached_face, marked_poses = rc.check_approach(marked_poses, point)
                 if(rc.hellos_said >= 3):
+                    time.sleep(2)
+                    rc.info("I have greeted 3 people, I am done!")
                     rc.destroyNode()
                     break
                 if approached_face:
