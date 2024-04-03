@@ -58,7 +58,7 @@ class detect_faces(Node):
 			self.get_logger().info(f"Running inference on image...")
 
 			# run inference
-			res = self.model.predict(cv_image, imgsz=(256, 320), show=False, verbose=False, classes=[0], device=self.device)
+			res = self.model.predict(cv_image, imgsz=(256, 320), show=False, verbose=False, classes=[0], device=self.device, conf=0.7)
 
 			# iterate over results
 			for x in res:

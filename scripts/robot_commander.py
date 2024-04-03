@@ -40,7 +40,6 @@ import math
 #import pyttsx3
 
 
-
 class TaskResult(Enum):
     UNKNOWN = 0
     SUCCEEDED = 1
@@ -57,9 +56,9 @@ class RobotCommander(Node):
 
     def __init__(self, node_name='robot_commander', namespace=''):
         super().__init__(node_name=node_name, namespace=namespace)
-        
+
         self.pose_frame_id = 'map'
-        
+
         # Flags and helper variables
         self.goal_handle = None
         self.result_future = None
@@ -73,22 +72,22 @@ class RobotCommander(Node):
                                  'dock_status',
                                  self._dockCallback,
                                  qos_profile_sensor_data)
-        
+
         self.localization_pose_sub = self.create_subscription(PoseWithCovarianceStamped,
                                                               'amcl_pose',
                                                               self._amclPoseCallback,
                                                               amcl_pose_qos)
-        
+
         self.people_marker_sub = self.create_subscription(Marker,
                                                           'people_marker',
                                                           self._peopleMarkerCallback,
                                                           QoSReliabilityPolicy.BEST_EFFORT)
-        
+
         # ROS2 publishers
         self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped,
                                                       'initialpose',
                                                       10)
-        
+
         # ROS2 Action clients
         self.nav_to_pose_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.spin_client = ActionClient(self, Spin, 'spin')
@@ -97,19 +96,27 @@ class RobotCommander(Node):
 
         self.latest_people_marker_pose = None
         self.current_pose = None
+        self.hellos_said = 0
+
+        # self.audio_engine = pyttsx3.init() ----------------
 
         self.get_logger().info(f"Robot commander has been initialized!")
+
+    def greet_face(self, msg):
+        # self.audio_engine.say(msg)
+        # self.audio_engine.runAndWait()
+        self.get_logger().info(msg)
 
     def _peopleMarkerCallback(self, msg):
         """Handle new messages from 'people_marker'."""
         self.debug('Received people marker pose')
         # Store the latest pose for use in the movement loop
         self.latest_people_marker_pose = msg.pose.position
-        ...
-        
+
+
     def destroyNode(self):
         self.nav_to_pose_client.destroy()
-        super().destroy_node()     
+        super().destroy_node()
 
     def goToPose(self, pose, behavior_tree=''):
         """Send a `NavToPose` action request."""
@@ -135,7 +142,7 @@ class RobotCommander(Node):
 
         self.result_future = self.goal_handle.get_result_async()
         return True
-    
+
     def spin(self, spin_dist, time_allowance=10):
         self.debug("Waiting for 'Spin' action server")
         while not self.spin_client.wait_for_server(timeout_sec=1.0):
@@ -155,7 +162,7 @@ class RobotCommander(Node):
 
         self.result_future = self.goal_handle.get_result_async()
         return True
-    
+
     def undock(self):
         """Perform Undock action."""
         self.info('Undocking...')
@@ -270,7 +277,7 @@ class RobotCommander(Node):
                 self.debug(f'Result of get_state: {state}')
             time.sleep(2)
         return
-    
+
     def YawToQuaternion(self, angle_z = 0.):
         quat_tf = quaternion_from_euler(0, 0, angle_z)
 
@@ -288,7 +295,7 @@ class RobotCommander(Node):
         self.debug('Received action feedback message')
         self.feedback = msg.feedback
         return
-    
+
     def _dockCallback(self, msg: DockStatus):
         self.is_docked = msg.is_docked
 
@@ -312,11 +319,11 @@ class RobotCommander(Node):
     def error(self, msg):
         self.get_logger().error(msg)
         return
-    
+
     def debug(self, msg):
         self.get_logger().debug(msg)
         return
-    
+
     def check_approach(self, marked_poses, curr_pose):
         self.get_logger().info(f"IM LOOKING FOR FACES")
         #Check if there is a new 'people_marker' pose to go to first
@@ -339,7 +346,7 @@ class RobotCommander(Node):
             coord_face.pose.orientation = self.YawToQuaternion(z)
             #coord_face = self.current_pose + self.latest_people_marker_pose
             for face in marked_poses:
-                if abs(x - face.pose.position.x) < 1.0 and abs(y - face.pose.position.y) < 2.5:
+                if abs(x - face.pose.position.x) < 1.5 and abs(y - face.pose.position.y) < 2.5:
                     self.get_logger().info(f"Face already marked")
                     #new = False
                     return False, marked_poses
@@ -357,6 +364,10 @@ class RobotCommander(Node):
             #make it better maybe
             goal_pose.pose.orientation = self.YawToQuaternion(z1)
 
+            #if (x1 < 0.3 or y1 < 0.3):
+            #    goal_pose.pose.position.x = curr_pose[0]
+            #    goal_pose.pose.position.y = curr_pose[1]
+            #else:
             goal_pose.pose.position.x = curr_pose[0] + x1/2
             goal_pose.pose.position.y = curr_pose[1] + y1/2
 
@@ -365,11 +376,24 @@ class RobotCommander(Node):
                 self.info("Moving towards the face...")
                 time.sleep(1)
 
-            # say hi
-            #engine = pyttsx3.init()
-            #engine.say("Hi there cutie")
-            #engine.runAndWait()    
-            self.get_logger().info(f"Hello there!")
+            self.latest_people_marker_pose = None
+            spin_dist = 0.5 * math.pi
+            n = 0
+            while 4 > n:
+                self.spin(spin_dist)
+                n += 1
+                while not self.isTaskComplete():
+                    self.info("Waiting for the task to complete...")
+                    if(self.latest_people_marker_pose is not None):
+                        self.greet_face("Hi there")
+                        self.get_logger().info(f"{self.hellos_said}")
+                        self.hellos_said += 1
+                        self.get_logger().info(f"Hello there!")
+                        time.sleep(1)
+                        n = 4
+                        break
+                    # self.check_approach(marked_poses, rc.current_pose)
+                    time.sleep(1)
             time.sleep(1)
 
             # MOVE BACK TO THE POINT
@@ -383,8 +407,8 @@ class RobotCommander(Node):
                 self.info("Moving back to the point...")
                 time.sleep(1)
             time.sleep(1)
-            
-            #goal_pose.pose.orientation = self.YawToQuaternion(0.5)         
+
+            #goal_pose.pose.orientation = self.YawToQuaternion(0.5)
             # Reset the latest people marker pose to ensure it's only used once
             self.latest_people_marker_pose = None
             return True, marked_poses
@@ -392,7 +416,7 @@ class RobotCommander(Node):
             return False, marked_poses
 
 def main(args=None):
-    
+
     rclpy.init(args=args)
     rc = RobotCommander()
 
@@ -406,117 +430,18 @@ def main(args=None):
     # If it is docked, undock it first
     if rc.is_docked:
         rc.undock()
-    
+
     # Finally send it a goal to reach
-    points = [[-1.16,-0.4,0.0],[-1.76,1.51,0.0],[-1.58,4.32,-0.584],[-1.32,3.44,-0.165],[0.25,3.32,-0.568],[1.9,3.04,0.57],[2.22,1.87,-0.989],[0.39,1.87,-0.207],[0.63,-0.76,0.458],[1.5,-0.4,-0.069],[3.27,-1.4,0.961],[2.23,-1.78,-1],[1.14,-1.8,-1.0],[-0.16,-1.33,0.832]]
-
-    # for point in points:
-    #     goal_pose = PoseStamped()
-    #     goal_pose.header.frame_id = 'map'
-    #     goal_pose.header.stamp = rc.get_clock().now().to_msg()
-
-    #     goal_pose.pose.position.x = point[0]
-    #     goal_pose.pose.position.y = point[1]
-    #     goal_pose.pose.orientation = rc.YawToQuaternion(point[2])
-
-    #     rc.goToPose(goal_pose)
-
-    #     while not rc.isTaskComplete():
-    #         rc.info("Waiting for the task to complete...")
-    #         time.sleep(1)
-
-    #     #goal_pose.pose.orientation = rc.YawToQuaternion(point[2]+3)
-    #     #rc.goToPose(goal_pose)
-
-    #     #while not rc.isTaskComplete():
-    #     #    rc.info("Waiting for the task to complete...")
-    #     #    time.sleep(1)
-
-    #     #goal_pose.pose.orientation = rc.YawToQuaternion(point[2]+5.9)
-    #     #rc.goToPose(goal_pose)
-
-    #     #while not rc.isTaskComplete():
-    #     #    rc.info("Waiting for the task to complete...")
-    #     #    time.sleep(1)
-
-    #     # Calculate the spin distance
-    #     spin_dist = 0.5 * math.pi
-
-    #    # Call the spin method four times to spin a full circle
-    #     for _ in range(4):
-    #         rc.spin(spin_dist)
-    #         while not rc.isTaskComplete():
-    #             rc.info("Waiting for the task to complete...")
-    #             time.sleep(1)
-
-    #         time.sleep(2)  #
-           
-    # rc.destroyNode()
+    #               1                2                  3                   4                 5                  6                7                   8                  9                 10                11              12               13                  14
+    points = [[-0.464, 0.18, 0,00],[-1.6, 1.22, 0.0],[-1.41, 4.36,-0.165],[-1.35, 3.17,-0.568],[1.9,3.04,0.57],[2.48,1.81,0.00247],[0.39,1.87,-0.207],[1.34,0.308,0.0582],[2.23,-1.78,-1],[3.27,-1.4,0.961],[1.14,-1.8,-1.0],[-0.16,-1.33,0.832]]
+    # ,[-0.7, 1.42,-0.584] 3
+    # [1.5,-0.4,-0.069] --> 10
+    # [2.23,-1.78,-1] --> 11
+    # [0.63,-0.76,0.458],[1.5,-0.4,-0.069]   9 and 10 possitions!!!
 
     marked_poses = []
     i = 0
-    while len(points) > i:
-        #Check if there is a new 'people_marker' pose to go to first
-        # if rc.latest_people_marker_pose:
-        #     rc.get_logger().info("AAAAAAAAAAAAAH")
-        #     #
-        #     # coord_face = PoseStamped()
-        #     # coord_face.header.frame_id = 'map'
-        #     # coord_face.header.stamp = rc.get_clock().now().to_msg()
-
-        #     # x = rc.current_pose.pose.position.x + rc.latest_people_marker_pose.x
-        #     # y = rc.current_pose.pose.position.y + rc.latest_people_marker_pose.y
-        #     # z = rc.latest_people_marker_pose.z
-        #     # coord_face.pose.position.x = x
-        #     # coord_face.pose.position.y = y
-        #     # coord_face.pose.orientation = rc.YawToQuaternion(z)
-        #     # #coord_face = rc.current_pose + rc.latest_people_marker_pose
-        #     # new = True
-        #     # for face in marked_poses:
-        #     #     if abs(x - face.pose.position.x) < 0.3 and abs(y - face.pose.position.y) < 0.3:
-        #     #         rc.get_logger().info(f"Face already marked")
-        #     #         new = False
-        #     #         break
-        #     # if new:
-        #     #     marked_poses.append(coord_face)
-        #     #     curr_pose = rc.current_pose
-        #     #     goal_pose = PoseStamped()
-        #     #     goal_pose.header.frame_id = 'map'
-        #     #     goal_pose.header.stamp = rc.get_clock().now().to_msg()
-
-
-        #     #     #make it better maybe
-        #     #     goal_pose.pose.orientation = rc.YawToQuaternion(-z)
-
-        #     #     goal_pose.pose.position.x = rc.current_pose.pose.position.x + rc.latest_people_marker_pose.x/2
-        #     #     goal_pose.pose.position.y = rc.current_pose.pose.position.y + rc.latest_people_marker_pose.y/2
-
-        #     #     rc.goToPose(goal_pose)
-        #     #     while not rc.isTaskComplete():
-        #     #         rc.info("Waiting for the task to complete...")
-        #     #         time.sleep(1)
-
-        #     #     # say hi
-        #     #     rc.get_logger().info(f"Hello there!")
-        #     #     time.sleep(1)
-
-        #     #     goal_pose.pose.position.x = curr_pose.pose.position.x
-        #     #     goal_pose.pose.position.y = curr_pose.pose.position.y
-        #     #     ## fix maybe
-        #     #     goal_pose.pose.orientation = rc.YawToQuaternion(z)
-
-        #     #     rc.goToPose(goal_pose)
-        #     #     while not rc.isTaskComplete():
-        #     #         rc.info("Waiting for the task to complete...")
-        #     #         time.sleep(1)
-        #     #     time.sleep(1)
-                
-        #     #     #goal_pose.pose.orientation = rc.YawToQuaternion(0.5)         
-        #     #     # Reset the latest people marker pose to ensure it's only used once
-        #     rc.latest_people_marker_pose = None
-        #     #curr_pose = rc.current_pose
-            
-        
+    while len(points) > i or rc.hellos_said <= 3:
         point = points[i]
         # If no new 'people_marker' pose, proceed with the next point in the list
         goal_pose = PoseStamped()
@@ -526,10 +451,7 @@ def main(args=None):
         goal_pose.pose.position.y = point[1]
         goal_pose.pose.orientation = rc.YawToQuaternion(point[2])
 
-
-
         rc.goToPose(goal_pose)
-        
 
         while not rc.isTaskComplete():
             rc.info("Waiting for the task to complete...")
@@ -543,71 +465,15 @@ def main(args=None):
                 rc.info("Waiting for the task to complete...")
                 rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
                 approached_face, marked_poses = rc.check_approach(marked_poses, point)
-                if approached_face: 
+                if(rc.hellos_said >= 3):
+                    rc.destroyNode()
+                    break
+                if approached_face:
                     n = 0
                 # rc.check_approach(marked_poses, rc.current_pose)
                 time.sleep(1)
-            #rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
-            #if rc.check_approach(marked_poses, point): 
-            #    n = 0
-
-        
         i+=1
-
-        # if rc.latest_people_marker_pose and rc.latest_people_marker_pose not in marked_poses:
-        #     rc.get_logger().info(f"I got coordinates for the face!")
-        #     goal_pose = PoseStamped()
-        #     goal_pose.header.frame_id = 'map'
-        #     goal_pose.header.stamp = rc.get_clock().now().to_msg()
-            
-
-        #     marked_poses.append(rc.latest_people_marker_pose)
-
-
-
-
-        #     #rc.get_logger().info(f"current pose: x={rc.current_pose} Possition of face: {rc.latest_people_marker_pose.x} {rc.latest_people_marker_pose.y} {rc.latest_people_marker_pose.z}")
-        #     # goal_pose.pose.position.x = 0.0
-        #     # goal_pose.pose.position.y = 0.0
-        #     goal_pose.pose.orientation = rc.YawToQuaternion(-rc.latest_people_marker_pose.z)
-
-        #     goal_pose.pose.position.x = rc.current_pose.pose.position.x + rc.latest_people_marker_pose.x/2
-        #     goal_pose.pose.position.y = rc.current_pose.pose.position.y + rc.latest_people_marker_pose.y/2
-
-        #     rc.goToPose(goal_pose)
-        #     #goal_pose.pose.orientation = rc.YawToQuaternion(0.5)         
-        #     # Reset the latest people marker pose to ensure it's only used once
-        #     rc.latest_people_marker_pose = None
-        # else:
-        #     point = points[i]
-        #     # If no new 'people_marker' pose, proceed with the next point in the list
-        #     goal_pose = PoseStamped()
-        #     goal_pose.header.frame_id = 'map'
-        #     goal_pose.header.stamp = rc.get_clock().now().to_msg()
-        #     goal_pose.pose.position.x = point[0]
-        #     goal_pose.pose.position.y = point[1]
-        #     goal_pose.pose.orientation = rc.YawToQuaternion(point[2])
-
-
-        #     while not rc.isTaskComplete():
-        #         rc.info("Waiting for the task to complete...")
-        #         time.sleep(1)
-
-        #     rc.goToPose(goal_pose)
-        #     spin_dist = 0.5 * math.pi
-
-        #     for _ in range(4):
-        #         rc.spin(spin_dist)
-        #         while not rc.isTaskComplete():
-        #             rc.info("Waiting for the task to complete...")
-        #             time.sleep(1)
-
-            
-        #     i+=1
-  
-
-    
-    # rc.destroyNode()
+    rc.destroyNode()
     # And a simple example
 if __name__=="__main__":
     main()
