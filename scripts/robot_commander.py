@@ -333,7 +333,7 @@ class RobotCommander(Node):
         self.get_logger().debug(msg)
         return
 
-    def check_approach(self, marked_poses, curr_pose):
+    def check_approach(self, marked_poses, point):
         self.get_logger().info(f"IM LOOKING FOR FACES")
         #Check if there is a new 'people_marker' pose to go to first
         coord_face_relative_to_r = self.latest_people_marker_pose
@@ -342,9 +342,9 @@ class RobotCommander(Node):
             coord_face.header.frame_id = 'map'
             coord_face.header.stamp = self.get_clock().now().to_msg()
 
-            x = curr_pose[0] + coord_face_relative_to_r.x
-            y = curr_pose[1] + coord_face_relative_to_r.y
-            z = coord_face_relative_to_r.z + curr_pose[2]
+            x = point[0] + coord_face_relative_to_r.x
+            y = point[1] + coord_face_relative_to_r.y
+            z = coord_face_relative_to_r.z + point[2]
             self.get_logger().info(f"----------------------------> {z}")
 
             x1 = coord_face_relative_to_r.x
@@ -353,13 +353,13 @@ class RobotCommander(Node):
             coord_face.pose.position.x = x
             coord_face.pose.position.y = y
             coord_face.pose.orientation = self.YawToQuaternion(z)
-            #coord_face = self.current_pose + self.latest_people_marker_pose
+            
             for face in marked_poses:
                 if abs(x - face.pose.position.x) < 1.5 and abs(y - face.pose.position.y) < 2.5:
                     self.get_logger().info(f"Face already marked")
-                    #new = False
+                    
                     return False, marked_poses
-            #if new:
+            
             marked_poses.append(coord_face)
             point_msg = PointStamped()
             point_msg.header.frame_id = 'base_link'
@@ -377,46 +377,59 @@ class RobotCommander(Node):
             goal_pose.header.frame_id = 'map'
             goal_pose.header.stamp = self.get_clock().now().to_msg()
 
-            #make it better maybe
             goal_pose.pose.orientation = self.YawToQuaternion(z1)
 
-            #if (x1 < 0.3 or y1 < 0.3):
-            #    goal_pose.pose.position.x = curr_pose[0]
-            #    goal_pose.pose.position.y = curr_pose[1]
-            #else:
-            goal_pose.pose.position.x = curr_pose[0] + x1/2
-            goal_pose.pose.position.y = curr_pose[1] + y1/2
+            while abs(x1) >= 1.0 or abs(y1) >= 1.0:
+                curr_pose = self.current_pose.pose.position
+                if x1 < 0.3:
+                    goal_pose.pose.position.x = curr_pose.x
+                    goal_pose.pose.position.y = curr_pose.y + y1/2
+                elif y1 < 0.3:
+                    goal_pose.pose.position.x = curr_pose.x + x1/2
+                    goal_pose.pose.position.y = curr_pose.y
+                else:  
+                    goal_pose.pose.position.x = curr_pose.x + x1/2
+                    goal_pose.pose.position.y = curr_pose.y + y1/2
+                x1 = goal_pose.pose.position.x
+                y1 = goal_pose.pose.position.y
+                goal_pose.pose.orientation = self.YawToQuaternion(math.atan2(y1, x1))
+                self.goToPose(goal_pose)
+                while not self.isTaskComplete():
+                    self.info("Moving towards the face...")
+                    time.sleep(1)
 
-            self.goToPose(goal_pose)
-            while not self.isTaskComplete():
-                self.info("Moving towards the face...")
-                time.sleep(1)
+            
+            # while not self.isTaskComplete():
+            #     self.info("Moving towards the face...")
+            #     time.sleep(1)
 
             self.latest_people_marker_pose = None
-            spin_dist = 0.5 * math.pi
+            spin_dist = 0.2 * math.pi
             n = 0
-            while 4 > n:
+            approached = False
+            while n < 10:
                 self.spin(spin_dist)
                 n += 1
                 while not self.isTaskComplete():
                     self.info("Waiting for the task to complete...")
                     if(self.latest_people_marker_pose is not None):
+                        time.sleep(3)
                         self.greet_face("Hi there")
                         self.get_logger().info(f"{self.hellos_said}")
                         self.hellos_said += 1
                         self.get_logger().info(f"Hello there!")
-                        time.sleep(1)
-                        n = 4
+                        time.sleep(3)
+                        n = 10
                         break
                     # self.check_approach(marked_poses, rc.current_pose)
                     time.sleep(1)
             time.sleep(1)
 
             # MOVE BACK TO THE POINT
-            goal_pose.pose.position.x = curr_pose[0]
-            goal_pose.pose.position.y = curr_pose[1]
+            goal_pose.pose.position.x = point[0]
+            goal_pose.pose.position.y = point[1]
             ## fix maybe
-            goal_pose.pose.orientation = self.YawToQuaternion(curr_pose[2])
+            goal_pose.pose.orientation = self.YawToQuaternion(point[2])
 
             self.goToPose(goal_pose)
             while not self.isTaskComplete():
@@ -449,8 +462,9 @@ def main(args=None):
 
     # Finally send it a goal to reach
     #               1                2                  3                   4                 5                  6                7                   8                  9                 10                11              12               13                  14
-    points = [[-0.464, 0.18, 0,00],[-1.6, 1.22, 0.0],[-1.41, 4.36,-0.165],[-1.35, 3.17,-0.568],[1.9,3.04,0.57],[2.48,1.81,0.00247],[0.39,1.87,-0.207],[1.34,0.308,0.0582],[2.23,-1.78,-1],[3.27,-1.4,0.961],[1.14,-1.8,-1.0],[-0.16,-1.33,0.832]]
+    points = [[-0.9, -0.4, 0,00],[-1.6, 1.22, 0.0],[-1.41, 4.36,-0.165],[-1.35, 3.17,-0.568],[1.9,3.04,0.57],[2.48,1.81,0.00247],[0.39,1.87,-0.207],[1.34,0.308,0.0582],[2.23,-1.78,-1],[3.27,-1.4,0.961],[1.14,-1.8,-1.0],[-0.16,-1.33,0.832]]
     # ,[-0.7, 1.42,-0.584] 3
+    # [-0.464, 0.18, 0,00]
     # [1.5,-0.4,-0.069] --> 10
     # [2.23,-1.78,-1] --> 11
     # [0.63,-0.76,0.458],[1.5,-0.4,-0.069]   9 and 10 possitions!!!
@@ -475,8 +489,10 @@ def main(args=None):
 
         rc.latest_people_marker_pose = None
         spin_dist = 0.5 * math.pi
-        for n in range(4):
+        n = 0
+        while n < 4:
             rc.spin(spin_dist)
+            n+=1
             while not rc.isTaskComplete():
                 rc.info("Waiting for the task to complete...")
                 rc.get_logger().info(f"curr pose x: {rc.current_pose.pose.position.x} y: {rc.current_pose.pose.position.y} z: {rc.current_pose.pose.orientation.z}")
@@ -484,6 +500,7 @@ def main(args=None):
                 if(rc.hellos_said >= 3):
                     time.sleep(2)
                     rc.info("I have greeted 3 people, I am done!")
+                    rc.greet_face("I am done with this shit")
                     rc.destroyNode()
                     break
                 if approached_face:
